@@ -5,7 +5,7 @@
 #+TITLE: Erk . wtf did I do!
 
 * FreeBSD Integricloud Part 1: Setting up mticlient <2020-09-20 Sun>
-Integricloud used its own =mticlietn= to handle running vms. They only
+Integricloud uses its own [[https://secure.integricloud.com/content/MTICLIP/sintro.html][=mticlietn=]] to handle running vms. They only
 have an official guide for it with Debian linux. So this is my attempt
 to set up FreeBSD from FreeBSD on it.
 

@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2020-09-14 Mon 18:19 -->
+<!-- 2020-09-20 Sun 16:37 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Erk . wtf did I do!</title>
@@ -320,23 +320,143 @@ for the JavaScript code in this tag.
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents">
 <ul>
-<li><a href="#org55a4e56">1. Welcome</a></li>
+<li><a href="#org86094d1">1. FreeBSD Integricloud Part 1: Setting up mticlient <span class="timestamp-wrapper"><span class="timestamp">&lt;2020-09-20 Sun&gt;</span></span></a></li>
+<li><a href="#orgdd822dc">2. Welcome</a></li>
 </ul>
 </div>
 </div>
 
-<div id="outline-container-org55a4e56" class="outline-2">
-<h2 id="org55a4e56"><span class="section-number-2">1</span> Welcome</h2>
+<div id="outline-container-org86094d1" class="outline-2">
+<h2 id="org86094d1"><span class="section-number-2">1</span> FreeBSD Integricloud Part 1: Setting up mticlient <span class="timestamp-wrapper"><span class="timestamp">&lt;2020-09-20 Sun&gt;</span></span></h2>
 <div class="outline-text-2" id="text-1">
+<p>
+Integricloud used its own <code>mticlietn</code> to handle running vms. They only
+have an official guide for it with Debian linux. So this is my attempt
+to set up FreeBSD from FreeBSD on it.
+</p>
+
+<p>
+First you have to build <code>libflexver</code> which is a part of it, a quick
+attempt at compilation shows that it needs <code>uECC.h</code>. First I thought
+that the package <a href="https://www.freshports.org/security/libuecc/"><code>libuecc</code></a> in ports had that header, but that
+assumption was wrong. The actual package you need is called <a href="https:github.com/kmackay/micro-ecc">micro-ecc</a>
+and is not in ports. But it is in the <code>thirdparty</code> folder.
+</p>
+
+<p>
+<code>micro-ecc</code> had no Makefile so I tried to figure out what it wanted,
+the docs of <code>micro-ecc</code> said to symlink or copy the files so I tried
+that but the c code uses angle brackets so it did not work. Then I had
+a look in the makefile for <code>libflexver</code> and saw that it looked like
+the <code>../thirdparty/micro-ecc</code> folder should be inluded. Which was
+strange. then I saw that the file used the Gnu Make syntax <code>%.o:
+%.c</code>. so I tried to build it with <code>gmake</code> and it worked in first
+attempt.
+</p>
+
+<p>
+The next looked scarier:
+</p>
+<div class="org-src-container">
+<pre class="src src-c">mticlient.<span style="color: #5fafd7;">c</span>:43:10: fatal error: <span style="color: #dd0000; font-weight: bold;">'</span>sys/io.h<span style="color: #dd0000; font-weight: bold;">'</span> file not found
+<span style="color: #d18aff;">#include</span> <span style="color: #dd0000; font-weight: bold;">&lt;</span><span style="color: #ff4ea3;">sys/io.h</span><span style="color: #dd0000; font-weight: bold;">&gt;</span>
+         ^~~~~~~~~~
+1 error generated.
+gmake: *** <span style="color: #dd0000; font-weight: bold;">[</span>Makefile:59: mticlient.o<span style="color: #dd0000; font-weight: bold;">]</span> Error 1
+</pre>
+</div>
+
+<p>
+I wanted a Linux specific header, I am not sure what it is used for so
+I tried to just comment it out. It also needs libcurl, bu was for some
+reason not finding it so I just added the full path of the file
+instead
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #6c6c6c; font-style: italic;">//</span><span style="color: #6c6c6c; font-style: italic;">#include &lt;curl/curl.h&gt;</span>
+<span style="color: #d18aff;">#include</span> <span style="color: #ff4ea3;">"/usr/local/include/curl/curl.h"</span>
+</pre>
+</div>
+
+<p>
+Well those seemed like some easy fixes that I was not sure if worked
+at the time, but the next error was looking worse
+</p>
+<div class="org-src-container">
+<pre class="src src-c">mticlient.<span style="color: #5fafd7;">c</span>:203:55: error: incomplete definition of type <span style="color: #dd0000; font-weight: bold;">'</span><span style="color: #a1db00;">struct</span> sockaddr_in<span style="color: #dd0000; font-weight: bold;">'</span>
+                                addr_ptr = inet_ntop<span style="color: #dd0000; font-weight: bold;">(</span>result-&gt;ai_family, &amp;addr_info-&gt;sin_addr, addr_buffer, <span style="color: #a1db00;">sizeof</span><span style="color: #5fafd7; font-weight: bold;">(</span>addr_buffer<span style="color: #5fafd7; font-weight: bold;">)</span><span style="color: #dd0000; font-weight: bold;">)</span>;
+                                                                         ~~~~~~~~~^
+mticlient.c:183:9: note: forward declaration of <span style="color: #dd0000; font-weight: bold;">'</span><span style="color: #a1db00;">struct</span> sockaddr_in<span style="color: #dd0000; font-weight: bold;">'</span>
+        <span style="color: #a1db00;">struct</span> sockaddr_in* addr_info;
+</pre>
+</div>
+
+<p>
+I looked a bit around online and found a site that seemed to have the
+<a href="https://www.pgpool.net/mantisbt/login_page.php?return=%2Fmantisbt%2Fview.php%3Fid%3D166">solution</a>, but I did not want to sign up for pgpool to see it, luckily
+the google site cache had an version I could read.
+There was two patches on the site but they boiled down to this<sup><a id="fnr.1" class="footref" href="#fn.1">1</a></sup>
+</p>
+<div class="org-src-container">
+<pre class="src src-diff"><span style="color: #eeeeee; background-color: #5faf00; font-weight: bold;">+</span><span style="color: #d7ff5f; background-color: #3a3a3a; font-weight: bold;">#ifdef __FreeBSD__</span>
+<span style="color: #eeeeee; background-color: #5faf00; font-weight: bold;">+</span><span style="color: #d7ff5f; background-color: #3a3a3a; font-weight: bold;">#include &lt;sys/wait.h&gt;</span>
+<span style="color: #eeeeee; background-color: #5faf00; font-weight: bold;">+</span><span style="color: #d7ff5f; background-color: #3a3a3a; font-weight: bold;">#include &lt;netinet/in.h&gt;b</span>
++#endif
+</pre>
+</div>
+<p>
+So I tried that, and it worked!
+</p>
+
+<p>
+Now back to curl, apperently<sup><a id="fnr.2" class="footref" href="#fn.2">2</a></sup> my earlier solution was not
+complete, I looked a bit around and found out that the reason was that
+<code>/usr/local/include</code> is not included by default so I added that to the
+list of includes. Similarily I had to add <code>/usr/local/lib</code> to the
+<code>LDFLAGS</code>.
+</p>
+
+<p>
+Now it looked like everything with the mticlient was working so I went
+on to attempting to set up a vps.
+</p>
+
+<p>
+I put the diff in a <a href="https://gist.github.com/Erk-/ce52c073a86082cbd5ca8ad01a47a227">gist you can see here</a>.
+</p>
+
+<p>
+As integricloud have not processed my payment yet the rest of it will
+be on another day.
+</p>
+</div>
+</div>
+<div id="outline-container-orgdd822dc" class="outline-2">
+<h2 id="orgdd822dc"><span class="section-number-2">2</span> Welcome</h2>
+<div class="outline-text-2" id="text-2">
 <p>
 This is hopefully going to be a small blog about stuff I do at some point.
 </p>
 </div>
 </div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" class="footnum" href="#fnr.1">1</a></sup> <div class="footpara"><p class="footpara">
+Also found the <a href="https://git.postgresql.org/gitweb/?p=pgpool2.git;a=commitdiff;h=fef52de4e72ae466d0813a73507d51a8802e3fc3">git diff</a> where the change happened 
+</p></div></div>
+
+<div class="footdef"><sup><a id="fn.2" class="footnum" href="#fnr.2">2</a></sup> <div class="footpara"><p class="footpara">
+To no ones surprise 
+</p></div></div>
+
+
 </div>
+</div></div>
 <div id="postamble" class="status">
 <p class="author">Author: Valdemar Erk</p>
-<p class="date">Created: 2020-09-14 Mon 18:19</p>
+<p class="date">Created: 2020-09-20 Sun 16:37</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

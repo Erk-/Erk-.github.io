@@ -4,5 +4,84 @@
 
 #+TITLE: Erk . wtf did I do!
 
+* FreeBSD Integricloud Part 1: Setting up mticlient <2020-09-20 Sun>
+Integricloud used its own =mticlietn= to handle running vms. They only
+have an official guide for it with Debian linux. So this is my attempt
+to set up FreeBSD from FreeBSD on it.
+
+First you have to build =libflexver= which is a part of it, a quick
+attempt at compilation shows that it needs =uECC.h=. First I thought
+that the package [[https://www.freshports.org/security/libuecc/][=libuecc=]] in ports had that header, but that
+assumption was wrong. The actual package you need is called [[https:github.com/kmackay/micro-ecc][micro-ecc]]
+and is not in ports. But it is in the =thirdparty= folder.
+
+=micro-ecc= had no Makefile so I tried to figure out what it wanted,
+the docs of =micro-ecc= said to symlink or copy the files so I tried
+that but the c code uses angle brackets so it did not work. Then I had
+a look in the makefile for =libflexver= and saw that it looked like
+the =../thirdparty/micro-ecc= folder should be inluded. Which was
+strange. then I saw that the file used the Gnu Make syntax ~%.o:
+%.c~. so I tried to build it with ~gmake~ and it worked in first
+attempt.
+
+The next looked scarier:
+#+begin_src c
+mticlient.c:43:10: fatal error: 'sys/io.h' file not found
+#include <sys/io.h>
+         ^~~~~~~~~~
+1 error generated.
+gmake: *** [Makefile:59: mticlient.o] Error 1
+#+end_src
+
+I wanted a Linux specific header, I am not sure what it is used for so
+I tried to just comment it out. It also needs libcurl, bu was for some
+reason not finding it so I just added the full path of the file
+instead
+#+begin_src c
+//#include <curl/curl.h>
+#include "/usr/local/include/curl/curl.h"
+#+end_src
+
+Well those seemed like some easy fixes that I was not sure if worked
+at the time, but the next error was looking worse
+#+begin_src c
+mticlient.c:203:55: error: incomplete definition of type 'struct sockaddr_in'
+                                addr_ptr = inet_ntop(result->ai_family, &addr_info->sin_addr, addr_buffer, sizeof(addr_buffer));
+                                                                         ~~~~~~~~~^
+mticlient.c:183:9: note: forward declaration of 'struct sockaddr_in'
+        struct sockaddr_in* addr_info;
+#+end_src
+
+I looked a bit around online and found a site that seemed to have the
+[[https://www.pgpool.net/mantisbt/login_page.php?return=%2Fmantisbt%2Fview.php%3Fid%3D166][solution]], but I did not want to sign up for pgpool to see it, luckily
+the google site cache had an version I could read.
+There was two patches on the site but they boiled down to this[fn:3]
+#+begin_src diff
++#ifdef __FreeBSD__
++#include <sys/wait.h>
++#include <netinet/in.h>b
++#endif
+#+end_src
+So I tried that, and it worked!
+
+Now back to curl, apperently[fn:1] my earlier solution was not
+complete, I looked a bit around and found out that the reason was that
+=/usr/local/include= is not included by default so I added that to the
+list of includes. Similarily I had to add =/usr/local/lib= to the
+=LDFLAGS=.
+
+Now it looked like everything with the mticlient was working so I went
+on to attempting to set up a vps.
+
+I put the diff in a [[https://gist.github.com/Erk-/ce52c073a86082cbd5ca8ad01a47a227][gist you can see here]].
+
+As integricloud have not processed my payment yet the rest of it will
+be on another day.
 * Welcome
 This is hopefully going to be a small blog about stuff I do at some point.
+
+* Footnotes 
+
+[fn:3]Also found the [[https://git.postgresql.org/gitweb/?p=pgpool2.git;a=commitdiff;h=fef52de4e72ae466d0813a73507d51a8802e3fc3][git diff]] where the change happened 
+
+[fn:1]To no ones surprise 
